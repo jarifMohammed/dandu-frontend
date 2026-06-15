@@ -166,7 +166,7 @@ export function SkuSearchPage({ session }: { session: AuthSession }) {
                 <option value="ALL">All Channels</option>
                 <option value="AMAZON">Amazon</option>
                 <option value="EBAY">eBay</option>
-                <option value="DANDU">DistinctAndUnique</option>
+                <option value="WEBSITE">DistinctAndUnique</option>
               </select>
             </label>
           </div>

@@ -46,7 +46,7 @@ export type SkuMetrics = {
 export type SkuFilterParams = {
   q?: string;
   stockStatus?: 'ALL' | 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
-  channel?: 'ALL' | 'AMAZON' | 'EBAY' | 'DANDU';
+  channel?: 'ALL' | 'AMAZON' | 'EBAY' | 'WALMART' | 'SHOPIFY' | 'WEBSITE' | 'OTHER';
 };
 
 export type PaginatedSkus = {
@@ -339,128 +339,50 @@ export const authApi = {
     return request<{ url: string; state: string; message: string }>(`/auth/google${search}`);
   },
 
-  // --- MOCKED BUSINESS LOGIC APIS ---
   searchSku(accessToken: string, sku: string) {
-    const found = MOCK_CATALOG.find((s) => s.sku.toLowerCase() === sku.toLowerCase());
-    if (found) {
-      return mockRequest<SkuMetrics>(found, 400);
-    }
-    // Fallback if typed manual
-    return mockRequest<SkuMetrics>({ ...MOCK_CATALOG[0], sku: sku.toUpperCase() }, 400);
+    return request<SkuMetrics>(`/sku-dashboard/search?sku=${encodeURIComponent(sku)}`, {
+      token: accessToken,
+    });
   },
 
   browseSkus(accessToken: string, filters: SkuFilterParams, cursor?: string, limit = 10) {
-    // 1. Filter the catalog
-    let filtered = MOCK_CATALOG.filter(skuData => {
-      // Keyword filter
-      if (filters.q) {
-        const q = filters.q.toLowerCase();
-        const skuStr = skuData.sku.toLowerCase();
-        const titleStr = String(skuData.product?.title || '').toLowerCase();
-        if (!skuStr.includes(q) && !titleStr.includes(q)) {
-          return false;
-        }
-      }
+    const params = new URLSearchParams();
+    if (filters.q) params.set('q', filters.q);
+    if (filters.stockStatus) params.set('stockStatus', filters.stockStatus);
+    if (filters.channel) params.set('channel', filters.channel);
+    if (cursor) params.set('cursor', cursor);
+    params.set('limit', String(limit));
 
-      // Channel filter
-      if (filters.channel && filters.channel !== 'ALL') {
-        const hasChannel = skuData.channels.some(c => c.channel === filters.channel);
-        if (!hasChannel) return false;
-      }
-
-      // Stock Status filter
-      if (filters.stockStatus && filters.stockStatus !== 'ALL') {
-        const totalStock = skuData.stock.reduce((sum, s: any) => sum + (s.available || 0), 0);
-        if (filters.stockStatus === 'OUT_OF_STOCK' && totalStock > 0) return false;
-        if (filters.stockStatus === 'LOW_STOCK' && (totalStock === 0 || totalStock > 50)) return false;
-        if (filters.stockStatus === 'IN_STOCK' && totalStock <= 50) return false;
-      }
-
-      return true;
+    return request<PaginatedSkus>(`/sku-dashboard/browse?${params.toString()}`, {
+      token: accessToken,
     });
-
-    // 2. Cursor Pagination
-    let startIndex = 0;
-    if (cursor) {
-      const idx = filtered.findIndex(s => s.sku === cursor);
-      if (idx !== -1) startIndex = idx + 1;
-    }
-
-    const items = filtered.slice(startIndex, startIndex + limit);
-    const nextCursor = (startIndex + limit) < filtered.length ? items[items.length - 1].sku : null;
-
-    return mockRequest<PaginatedSkus>({
-      items,
-      nextCursor,
-      total: filtered.length,
-    }, 600);
   },
 
   importSkuReport(accessToken: string, payload: { fileName: string; content: string }) {
-    return mockRequest<ImportResult>({
-      status: 'COMPLETED',
-      totalRows: 1250,
-      importedRows: 1250,
-      failedRows: 0,
-      startedAt: new Date().toISOString(),
-      completedAt: new Date().toISOString(),
-    }, 1500);
+    return request<ImportResult>('/sku-dashboard/import', {
+      method: 'POST',
+      token: accessToken,
+      body: JSON.stringify(payload),
+    });
   },
 
   getDashboardMetrics(accessToken: string, period: string = '30D') {
-    return mockRequest<DashboardMetrics>(buildDashboardMetrics(period), 400);
+    return request<DashboardMetrics>(`/sku-dashboard/dashboard?period=${encodeURIComponent(period)}`, {
+      token: accessToken,
+    });
   },
 
   triggerLinnworksSync(accessToken: string) {
-    // Simulates a multi-second sync operation
-    return mockRequest<SyncResult>({
-      status: 'COMPLETED',
-      updatedSkus: 147,
-      updatedStock: 312,
-      updatedListings: 89,
-      syncedAt: new Date().toISOString(),
-      durationMs: 3200,
-    }, 3200);
+    return request<SyncResult>('/sku-dashboard/sync/linnworks', {
+      method: 'POST',
+      token: accessToken,
+      body: JSON.stringify({ queued: false }),
+    });
   },
 
   getInventoryAlerts(accessToken: string) {
-    const alerts: InventoryAlertItem[] = [
-      {
-        sku: 'COPPER-ROUD-8MM-441',
-        title: 'Copper Round 8mm Strip',
-        type: 'OUT_OF_STOCK',
-        detail: 'FBA stock at 0 units. MFN stock: 0 units. Last sold 3 days ago.',
-        severity: 'HIGH',
-      },
-      {
-        sku: 'REBAR-CTR-12MM-104',
-        title: 'Heavy Duty 12mm Rebar Center Cut',
-        type: 'CRITICAL_LOW',
-        detail: 'Only 4 days of cover remaining at current velocity. Reorder point exceeded.',
-        severity: 'HIGH',
-      },
-      {
-        sku: 'ALUM-FLAT-16MM-312',
-        title: 'Aluminium Flat Bar 16mm',
-        type: 'AGED_STOCK',
-        detail: '420 FBA units have been in warehouse for 185+ days. Aged inventory fees imminent.',
-        severity: 'MEDIUM',
-      },
-      {
-        sku: 'BRASS-SIDE-20MM-229',
-        title: 'Brass Side Profile 20mm',
-        type: 'DEAD_STOCK',
-        detail: 'No sales in 45 days. 85 FBA units sitting idle. Consider pricing or removal.',
-        severity: 'MEDIUM',
-      },
-      {
-        sku: 'STEEL-CTR-10MM-763',
-        title: 'Steel Centre Cut 10mm',
-        type: 'CRITICAL_LOW',
-        detail: '6 days of cover on Amazon CA FBA. Lead time is 21 days.',
-        severity: 'HIGH',
-      },
-    ];
-    return mockRequest<InventoryAlertItem[]>(alerts, 350);
+    return request<InventoryAlertItem[]>('/sku-dashboard/alerts', {
+      token: accessToken,
+    });
   },
 };

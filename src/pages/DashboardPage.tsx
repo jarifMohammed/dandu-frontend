@@ -6,7 +6,7 @@ import {
 import { Kpi, Panel, InlineError } from '../components/ui';
 import {
   authApi, AuthSession, CurrentUserProfile, DashboardMetrics, DashboardPeriod, SyncResult,
-  CHANNEL_PERFORMANCE_BASE, InventoryAlertItem,
+  InventoryAlertItem,
 } from '../lib/authApi';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -102,13 +102,19 @@ export function DashboardPage({ session, profile }: { session: AuthSession; prof
     }
   };
 
-  // Scale the channel performance table by period
-  const m = PERIOD_MULTIPLIERS[period];
-  const channelPerf = CHANNEL_PERFORMANCE_BASE.map((row) => ({
-    ...row,
-    units: Math.round(row.units * m),
-    revenue: Math.round(row.revenue * m),
-  }));
+  const totalRevenue = metrics?.revenueTrend.reduce((sum, row) => sum + row.revenue, 0) ?? 0;
+  const totalUnits = metrics?.salesVelocity.reduce((sum, row) => sum + row.fba + row.mfn, 0) ?? 0;
+  const channelPerf = (metrics?.salesVelocity ?? []).map((row) => {
+    const units = row.fba + row.mfn;
+    return {
+      channel: row.channel,
+      fulfillment: row.fba && row.mfn ? 'FBA + MFN' : row.fba ? 'FBA' : 'MFN',
+      units,
+      revenue: totalUnits > 0 ? Math.round((units / totalUnits) * totalRevenue) : 0,
+      growth: 0,
+      stockCover: 0,
+    };
+  });
 
   return (
     <div className="space-y-4">

@@ -61,7 +61,7 @@ function getChannelData(metrics: SkuMetrics, channelName: string, country?: stri
   ) as any;
 
   const stockMFN = metrics.stock.find(
-    (s: any) => s.locationType === 'MFN' && (!country || s.country === country),
+    (s: any) => s.locationType === 'FBM' && (!country || s.country === country),
   ) as any;
 
   return {
@@ -102,7 +102,7 @@ export function SkuDataTable({ data }: { data: SkuMetrics }) {
     { name: 'Amazon US', ch: 'AMAZON', country: 'US' },
     { name: 'Amazon CA', ch: 'AMAZON', country: 'CA' },
     { name: 'eBay', ch: 'EBAY', country: undefined },
-    { name: 'DistinctAndUnique', ch: 'DANDU', country: undefined },
+    { name: 'DistinctAndUnique', ch: 'WEBSITE', country: undefined },
   ];
 
   const channels = channelDefs.map((def) => ({
@@ -113,9 +113,9 @@ export function SkuDataTable({ data }: { data: SkuMetrics }) {
   const attrValues: Record<string, string> = {
     'COST': formatCurrency(product.cost, product.currency),
     'WEIGHT (oz / lbs)': formatNumber(product.weight),
-    'LENGTH (in)': formatNumber(product.length),
-    'WIDTH (in)': formatNumber(product.width),
-    'HEIGHT (in)': formatNumber(product.height),
+    'LENGTH (in)': formatNumber(product.dimensions?.length ?? product.length),
+    'WIDTH (in)': formatNumber(product.dimensions?.width ?? product.width),
+    'HEIGHT (in)': formatNumber(product.dimensions?.height ?? product.height),
     'MATERIAL': product.material ?? 'N/A',
     'THICKNESS': product.thickness ?? 'N/A',
     'PACK QTY': product.packQty ?? 'N/A',
