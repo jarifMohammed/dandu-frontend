@@ -61,7 +61,7 @@ function getChannelData(metrics: SkuMetrics, channelName: string, country?: stri
   ) as any;
 
   const stockMFN = metrics.stock.find(
-    (s: any) => s.locationType === 'FBM' && (!country || s.country === country),
+    (s: any) => s.locationType === 'MFN' && (!country || s.country === country),
   ) as any;
 
   return {
