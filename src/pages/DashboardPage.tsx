@@ -62,6 +62,11 @@ export function DashboardPage({ session, profile }: { session: AuthSession; prof
       setMetrics(response.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load metrics');
+      setMetrics({
+        salesVelocity: [],
+        stockDistribution: [],
+        revenueTrend: []
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -102,19 +107,42 @@ export function DashboardPage({ session, profile }: { session: AuthSession; prof
     }
   };
 
-  const totalRevenue = metrics?.revenueTrend.reduce((sum, row) => sum + row.revenue, 0) ?? 0;
-  const totalUnits = metrics?.salesVelocity.reduce((sum, row) => sum + row.fba + row.mfn, 0) ?? 0;
-  const channelPerf = (metrics?.salesVelocity ?? []).map((row) => {
-    const units = row.fba + row.mfn;
-    return {
-      channel: row.channel,
-      fulfillment: row.fba && row.mfn ? 'FBA + MFN' : row.fba ? 'FBA' : 'MFN',
-      units,
-      revenue: totalUnits > 0 ? Math.round((units / totalUnits) * totalRevenue) : 0,
-      growth: 0,
-      stockCover: 0,
-    };
-  });
+  const totalRevenue = metrics?.revenueTrend?.reduce((sum, row) => sum + row.revenue, 0) ?? 0;
+  const totalUnits = metrics?.salesVelocity?.reduce((sum, row) => sum + row.fba + row.mfn, 0) ?? 0;
+  
+  // Ensure we have something to show if the API returns empty arrays
+  const displayVelocity = metrics?.salesVelocity?.length 
+    ? metrics.salesVelocity 
+    : [
+        { channel: 'Amazon US', fba: 0, mfn: 0 },
+        { channel: 'eBay US', fba: 0, mfn: 0 },
+        { channel: 'Website', fba: 0, mfn: 0 }
+      ];
+
+  const displayStock = metrics?.stockDistribution?.length
+    ? metrics.stockDistribution
+    : [
+        { name: 'US FBA', value: 0, fill: '#047857' },
+        { name: 'US MAIN', value: 0, fill: '#0f172a' }
+      ];
+
+  const channelPerf = metrics?.salesVelocity?.length 
+    ? metrics.salesVelocity.map((row) => {
+        const units = row.fba + row.mfn;
+        return {
+          channel: row.channel,
+          fulfillment: row.fba && row.mfn ? 'FBA + MFN' : row.fba ? 'FBA' : 'MFN',
+          units,
+          revenue: totalUnits > 0 ? Math.round((units / totalUnits) * totalRevenue) : 0,
+          growth: 0,
+          stockCover: 0,
+        };
+      })
+    : [
+        { channel: 'Amazon US', fulfillment: 'FBA', units: 0, revenue: 0, growth: 0, stockCover: 0 },
+        { channel: 'eBay US', fulfillment: 'MFN', units: 0, revenue: 0, growth: 0, stockCover: 0 },
+        { channel: 'Website', fulfillment: 'MFN', units: 0, revenue: 0, growth: 0, stockCover: 0 }
+      ];
 
   return (
     <div className="space-y-4">
@@ -214,7 +242,7 @@ export function DashboardPage({ session, profile }: { session: AuthSession; prof
             </div>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={metrics.salesVelocity} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <BarChart data={displayVelocity} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                   <XAxis dataKey="channel" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
@@ -236,8 +264,8 @@ export function DashboardPage({ session, profile }: { session: AuthSession; prof
                     <PieChart>
                       <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
                       <Legend iconType="circle" layout="horizontal" verticalAlign="bottom" wrapperStyle={{ fontSize: '12px' }} />
-                      <Pie data={metrics.stockDistribution} cx="50%" cy="45%" innerRadius={60} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
-                        {metrics.stockDistribution.map((entry, index) => (
+                      <Pie data={displayStock} cx="50%" cy="45%" innerRadius={60} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
+                        {displayStock.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.fill} />
                         ))}
                       </Pie>

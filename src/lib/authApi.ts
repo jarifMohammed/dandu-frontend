@@ -113,13 +113,30 @@ async function request<T>(
     },
   });
 
-  const body = await response.json().catch(() => null);
+  const contentType = response.headers.get('content-type');
+  const isJson = contentType && contentType.includes('application/json');
+
+  let body: any = null;
+  if (isJson) {
+    body = await response.json().catch(() => null);
+  } else {
+    const text = await response.text().catch(() => null);
+    if (!response.ok) {
+      if (text && text.includes('Cannot GET')) {
+        throw new Error('API endpoint not found or backend is offline. Check your connection.');
+      }
+      throw new Error(`Server returned non-JSON error: ${response.status} ${response.statusText}`);
+    }
+  }
 
   if (!response.ok) {
-    const message =
-      body && typeof body === 'object' && 'message' in body
-        ? String(body.message)
-        : 'Request failed';
+    let message = 'Request failed';
+    if (body && typeof body === 'object' && 'message' in body) {
+      message = String(body.message);
+      if (message.includes('Cannot GET')) {
+        message = 'API endpoint not found. Backend may be offline or syncing.';
+      }
+    }
     throw new Error(message);
   }
 
