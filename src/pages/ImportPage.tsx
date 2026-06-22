@@ -54,6 +54,26 @@ function createHistoricalFailure(result: HistoricalSalesIngestionResult): Histor
   };
 }
 
+function createHistoricalRequestFailure(err: any): HistoricalImportFailure {
+  const rawMessage = err?.response?.data?.message || err?.message;
+  const isMissingRoute =
+    typeof rawMessage === 'string' &&
+    rawMessage.includes('Cannot POST') &&
+    rawMessage.includes('/sku-dashboard/sync/linnworks/historical-sales');
+
+  if (isMissingRoute) {
+    return {
+      message: 'Historical sales import is not available on the deployed backend yet. Please redeploy the backend and try again.',
+      rawMessage,
+    };
+  }
+
+  return {
+    message: 'Historical sales import could not be completed. No sales data was imported.',
+    rawMessage,
+  };
+}
+
 export function ImportPage({ session }: { session: AuthSession }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const initialHistoricalRange = defaultHistoricalRange();
@@ -138,10 +158,7 @@ export function ImportPage({ session }: { session: AuthSession }) {
       }
       setHistoricalResult(response.data);
     } catch (err: any) {
-      setHistoricalError({
-        message: 'Historical sales import could not be completed. No sales data was imported.',
-        rawMessage: err?.response?.data?.message || err?.message,
-      });
+      setHistoricalError(createHistoricalRequestFailure(err));
     } finally {
       setHistoricalLoading(false);
     }
