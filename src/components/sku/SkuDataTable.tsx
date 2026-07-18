@@ -1,4 +1,5 @@
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { Pencil, Check, X, Loader2, ExternalLink } from 'lucide-react';
 import { authApi, AuthSession, SkuMetrics } from '../../lib/authApi';
 
@@ -409,77 +410,87 @@ export function SkuDataTable({ data, session, onUpdate }: { data: SkuMetrics; se
   const selectedStockKey = fulfillmentTab === 'FBA' ? 'fbaQty' : 'mfnQty';
   const selectedPriceKey = fulfillmentTab === 'FBA' ? 'fbaPrice' : 'mfnPrice';
 
-  const stockSummaryRows = [
-    { label: 'DEFAULT', value: formatNumber(stockQuantity(data, { fba: false })) },
-    { label: 'USFBA (includes inbound)', value: formatNumber(stockQuantity(data, { country: 'US', fba: true, includeInbound: true })) },
-    { label: 'CAFBA (includes inbound)', value: formatNumber(stockQuantity(data, { country: 'CA', fba: true, includeInbound: true })) },
-  ];
-
-  const sellingPriceRows = [
-    { label: 'AZ CA', value: formatCurrency(amazonCa?.mfnPrice ?? amazonCa?.price ?? amazonCa?.fbaPrice) },
-    { label: 'CAFBA', value: formatCurrency(amazonCa?.fbaPrice ?? amazonCa?.price) },
-    { label: 'AZ US', value: formatCurrency(amazonUs?.mfnPrice ?? amazonUs?.price ?? amazonUs?.fbaPrice) },
-    { label: 'USFBA', value: formatCurrency(amazonUs?.fbaPrice ?? amazonUs?.price) },
-    { label: 'EBAY', value: formatCurrency(ebay?.price ?? ebay?.mfnPrice ?? ebay?.fbaPrice) },
-    { label: 'D&U', value: formatCurrency(website?.price ?? website?.mfnPrice ?? website?.fbaPrice) },
-  ];
-
-  const asinRows = [
-    { label: 'AZ US', asin: amazonUs?.asin ?? '-', url: getMarketplaceUrl('AMAZON', 'US', amazonUs?.asin ?? null, amazonUs?.listingId ?? null) },
-    { label: 'AZ CA', asin: amazonCa?.asin ?? '-', url: getMarketplaceUrl('AMAZON', 'CA', amazonCa?.asin ?? null, amazonCa?.listingId ?? null) },
+  const requiredOverviewRows: {
+    label: string;
+    stock: ReactNode;
+    price: ReactNode;
+    asin: ReactNode;
+  }[] = [
+    {
+      label: 'DEFAULT',
+      stock: formatNumber(stockQuantity(data, { fba: false })),
+      price: '-',
+      asin: '-',
+    },
+    {
+      label: 'AZ US',
+      stock: '-',
+      price: formatCurrency(amazonUs?.mfnPrice ?? amazonUs?.price ?? amazonUs?.fbaPrice),
+      asin: <ClickableValue value={amazonUs?.asin ?? '-'} url={getMarketplaceUrl('AMAZON', 'US', amazonUs?.asin ?? null, amazonUs?.listingId ?? null)} />,
+    },
+    {
+      label: 'USFBA',
+      stock: formatNumber(stockQuantity(data, { country: 'US', fba: true, includeInbound: true })),
+      price: formatCurrency(amazonUs?.fbaPrice ?? amazonUs?.price ?? amazonUs?.mfnPrice),
+      asin: <ClickableValue value={amazonUs?.asin ?? '-'} url={getMarketplaceUrl('AMAZON', 'US', amazonUs?.asin ?? null, amazonUs?.listingId ?? null)} />,
+    },
+    {
+      label: 'AZ CA',
+      stock: '-',
+      price: formatCurrency(amazonCa?.mfnPrice ?? amazonCa?.price ?? amazonCa?.fbaPrice),
+      asin: <ClickableValue value={amazonCa?.asin ?? '-'} url={getMarketplaceUrl('AMAZON', 'CA', amazonCa?.asin ?? null, amazonCa?.listingId ?? null)} />,
+    },
+    {
+      label: 'CAFBA',
+      stock: formatNumber(stockQuantity(data, { country: 'CA', fba: true, includeInbound: true })),
+      price: formatCurrency(amazonCa?.fbaPrice ?? amazonCa?.price ?? amazonCa?.mfnPrice),
+      asin: <ClickableValue value={amazonCa?.asin ?? '-'} url={getMarketplaceUrl('AMAZON', 'CA', amazonCa?.asin ?? null, amazonCa?.listingId ?? null)} />,
+    },
+    {
+      label: 'EBAY',
+      stock: '-',
+      price: formatCurrency(ebay?.price ?? ebay?.mfnPrice ?? ebay?.fbaPrice),
+      asin: <ClickableValue value={ebay?.asin ?? ebay?.listingId ?? '-'} url={getMarketplaceUrl('EBAY', ebay?.country ?? undefined, ebay?.asin ?? null, ebay?.listingId ?? null)} />,
+    },
+    {
+      label: 'D&U',
+      stock: '-',
+      price: formatCurrency(website?.price ?? website?.mfnPrice ?? website?.fbaPrice),
+      asin: <ClickableValue value={website?.asin ?? website?.listingId ?? '-'} url={getMarketplaceUrl('WEBSITE', website?.country ?? undefined, website?.asin ?? null, website?.listingId ?? null, (data.product as any)?.productUrl ?? null)} />,
+    },
   ];
 
   const saleWindows = [7, 30, 90, 365];
-  const salesSections = [
+  const requiredSalesRows = [
     {
-      title: 'SALES ALL SITES combined',
-      rows: saleWindows.map((days) => ({
-        label: `${days} Days Sales`,
-        value: formatNumber(sumSales(data, { days })),
-      })),
+      label: 'All Sites Combined',
+      values: saleWindows.map((days) => formatNumber(sumSales(data, { days }))),
     },
     {
-      title: 'SALES Amazon.ca',
-      rows: saleWindows.flatMap((days) => [
-        {
-          label: `${days} Days MFN Sales`,
-          value: formatNumber(sumSales(data, { channel: 'AMAZON', country: 'CA', fulfillmentType: 'MFN', days })),
-        },
-        {
-          label: `${days} Days FBA Sales`,
-          value: formatNumber(sumSales(data, { channel: 'AMAZON', country: 'CA', fulfillmentType: 'FBA', days })),
-        },
-      ]),
+      label: 'Amazon.ca MFN',
+      values: saleWindows.map((days) => formatNumber(sumSales(data, { channel: 'AMAZON', country: 'CA', fulfillmentType: 'MFN', days }))),
     },
     {
-      title: 'SALES Amazon.com',
-      rows: saleWindows.flatMap((days) => [
-        {
-          label: `${days} Days MFN Sales`,
-          value: formatNumber(sumSales(data, { channel: 'AMAZON', country: 'US', fulfillmentType: 'MFN', days })),
-        },
-        {
-          label: `${days} Days FBA Sales`,
-          value: formatNumber(sumSales(data, { channel: 'AMAZON', country: 'US', fulfillmentType: 'FBA', days })),
-        },
-      ]),
+      label: 'Amazon.ca FBA',
+      values: saleWindows.map((days) => formatNumber(sumSales(data, { channel: 'AMAZON', country: 'CA', fulfillmentType: 'FBA', days }))),
     },
     {
-      title: 'SALES Ebay',
-      rows: saleWindows.map((days) => ({
-        label: `${days} Days Sales`,
-        value: formatNumber(sumSales(data, { channel: 'EBAY', days })),
-      })),
+      label: 'Amazon.com MFN',
+      values: saleWindows.map((days) => formatNumber(sumSales(data, { channel: 'AMAZON', country: 'US', fulfillmentType: 'MFN', days }))),
     },
     {
-      title: 'SALES DistinctAndUnique',
-      rows: saleWindows.map((days) => ({
-        label: `${days} Days Sales`,
-        value: formatNumber(sumSales(data, { channel: 'WEBSITE', days })),
-      })),
+      label: 'Amazon.com FBA',
+      values: saleWindows.map((days) => formatNumber(sumSales(data, { channel: 'AMAZON', country: 'US', fulfillmentType: 'FBA', days }))),
+    },
+    {
+      label: 'Ebay',
+      values: saleWindows.map((days) => formatNumber(sumSales(data, { channel: 'EBAY', days }))),
+    },
+    {
+      label: 'DistinctAndUnique',
+      values: saleWindows.map((days) => formatNumber(sumSales(data, { channel: 'WEBSITE', days }))),
     },
   ];
-
   const attrValues: Record<string, string> = {
     'CATEGORY': product.category ?? 'N/A',
     'COST': formatCurrency(product.cost),
@@ -495,18 +506,6 @@ export function SkuDataTable({ data, session, onUpdate }: { data: SkuMetrics; se
   const th = 'border-b border-r border-slate-200 p-3 text-xs font-bold uppercase tracking-wide';
   const td = 'border-b border-r border-slate-200 p-2 text-center text-sm';
   const tdLeft = 'border-b border-r border-slate-200 p-3 text-sm';
-  const requiredSections = [
-    { title: 'STOCK QUANTITY', rows: stockSummaryRows },
-    { title: 'SELLING PRICE', rows: sellingPriceRows },
-    {
-      title: 'ASIN',
-      rows: asinRows.map((row) => ({
-        label: row.label,
-        value: <ClickableValue value={row.asin} url={row.url} />,
-      })),
-    },
-    ...salesSections,
-  ];
   const productRows = data.product ? [data.product as UnknownRecord] : [];
   const stockRows = data.stock as UnknownRecord[];
   const channelRows = data.channels as UnknownRecord[];
@@ -682,25 +681,51 @@ export function SkuDataTable({ data, session, onUpdate }: { data: SkuMetrics; se
         <table className="w-full min-w-[900px] border-collapse text-left">
           <thead>
             <tr>
-              <th className={`${th} bg-slate-100 text-slate-600 w-52`}>Required Field</th>
-              <th className={`${th} bg-slate-100 text-slate-600`}>Metric</th>
-              <th className={`${th} bg-slate-100 text-slate-600 text-center`}>Value</th>
+              <th className={`${th} bg-slate-800 text-white w-52`}>Required Matrix</th>
+              <th className={`${th} bg-slate-100 text-slate-600 text-center`}>Stock Quantity</th>
+              <th className={`${th} bg-slate-100 text-slate-600 text-center`}>Selling Price</th>
+              <th className={`${th} bg-slate-100 text-slate-600 text-center`}>ASIN / Listing</th>
             </tr>
           </thead>
           <tbody>
-            {requiredSections.map((section) => (
-              <Fragment key={section.title}>
-                <tr>
-                  <th className={`${th} bg-slate-800 text-white`} colSpan={3}>{section.title}</th>
-                </tr>
-                {section.rows.map((row, index) => (
-                  <tr key={`${section.title}-${row.label}`} className={index % 2 === 0 ? 'bg-slate-50 hover:bg-slate-100 transition-colors' : 'hover:bg-slate-50 transition-colors'}>
-                    <td className={`${tdLeft} text-[11px] font-bold uppercase tracking-wide text-slate-500`}>{section.title}</td>
-                    <td className={`${tdLeft} font-bold text-slate-700`}>{row.label}</td>
-                    <td className={`${td} font-black text-slate-900`}>{row.value}</td>
-                  </tr>
+            {requiredOverviewRows.map((row, index) => (
+              <tr key={row.label} className={index % 2 === 0 ? 'bg-slate-50 hover:bg-slate-100 transition-colors' : 'hover:bg-slate-50 transition-colors'}>
+                <th className={`${tdLeft} bg-slate-100 text-[11px] font-black uppercase tracking-wide text-slate-600`}>
+                  {row.label}
+                </th>
+                <td className={`${td} font-black text-slate-900`}>{row.stock}</td>
+                <td className={`${td} font-black text-slate-900`}>{row.price}</td>
+                <td className={`${td} font-black text-slate-900`}>{row.asin}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="overflow-x-auto border-t border-slate-200">
+        <table className="w-full min-w-[900px] border-collapse text-left">
+          <thead>
+            <tr>
+              <th className={`${th} bg-slate-800 text-white w-52`}>Sales Matrix</th>
+              {saleWindows.map((days) => (
+                <th key={days} className={`${th} bg-slate-100 text-slate-600 text-center`}>
+                  {days} Days Sales
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {requiredSalesRows.map((row, index) => (
+              <tr key={row.label} className={index % 2 === 0 ? 'bg-slate-50 hover:bg-slate-100 transition-colors' : 'hover:bg-slate-50 transition-colors'}>
+                <th className={`${tdLeft} bg-slate-100 text-[11px] font-black uppercase tracking-wide text-slate-600`}>
+                  {row.label}
+                </th>
+                {row.values.map((value, valueIndex) => (
+                  <td key={`${row.label}-${saleWindows[valueIndex]}`} className={`${td} font-black text-slate-900`}>
+                    {value}
+                  </td>
                 ))}
-              </Fragment>
+              </tr>
             ))}
           </tbody>
         </table>
