@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Pencil, Check, X, Loader2, ExternalLink } from 'lucide-react';
 import { authApi, AuthSession, SkuMetrics } from '../../lib/authApi';
 
@@ -653,28 +653,33 @@ export function SkuDataTable({ data, session, onUpdate }: { data: SkuMetrics; se
         </table>
       </div>
 
-      <section className="border-t border-slate-200 p-4">
-        <h4 className="mb-3 text-xs font-black uppercase tracking-wide text-slate-500">SKU Required Fields</h4>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {requiredSections.map((section) => (
-            <div key={section.title} className="overflow-hidden rounded-lg border border-slate-200">
-              <div className="bg-slate-100 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-600">
-                {section.title}
-              </div>
-              <table className="w-full border-collapse text-xs">
-                <tbody>
-                  {section.rows.map((row, index) => (
-                    <tr key={`${section.title}-${row.label}`} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                      <td className="border-t border-r border-slate-100 px-3 py-2 font-bold text-slate-500">{row.label}</td>
-                      <td className="border-t border-slate-100 px-3 py-2 text-right font-black text-slate-900">{row.value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-        </div>
-      </section>
+      <div className="overflow-x-auto border-t border-slate-200">
+        <table className="w-full min-w-[900px] border-collapse text-left">
+          <thead>
+            <tr>
+              <th className={`${th} bg-slate-100 text-slate-600 w-52`}>Required Field</th>
+              <th className={`${th} bg-slate-100 text-slate-600`}>Metric</th>
+              <th className={`${th} bg-slate-100 text-slate-600 text-center`}>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {requiredSections.map((section) => (
+              <Fragment key={section.title}>
+                <tr>
+                  <th className={`${th} bg-slate-800 text-white`} colSpan={3}>{section.title}</th>
+                </tr>
+                {section.rows.map((row, index) => (
+                  <tr key={`${section.title}-${row.label}`} className={index % 2 === 0 ? 'bg-slate-50 hover:bg-slate-100 transition-colors' : 'hover:bg-slate-50 transition-colors'}>
+                    <td className={`${tdLeft} text-[11px] font-bold uppercase tracking-wide text-slate-500`}>{section.title}</td>
+                    <td className={`${tdLeft} font-bold text-slate-700`}>{row.label}</td>
+                    <td className={`${td} font-black text-slate-900`}>{row.value}</td>
+                  </tr>
+                ))}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <DetailTable
         title="All Product Data"
