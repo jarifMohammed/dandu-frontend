@@ -75,6 +75,13 @@ export type SyncResult = {
   durationMs: number;
 };
 
+export type BackgroundJobResult = {
+  status: 'QUEUED';
+  jobId?: string;
+  jobType: 'manual' | 'inventory-refresh';
+  queuedAt: string;
+};
+
 export type InventoryRefreshResult = {
   status: 'COMPLETED' | 'FAILED';
   remainingSkus: string[];
@@ -506,15 +513,15 @@ export const authApi = {
   },
 
   triggerLinnworksSync(accessToken: string) {
-    return request<SyncResult>('/sku-dashboard/sync/linnworks', {
+    return request<BackgroundJobResult>('/sku-dashboard/sync/linnworks', {
       method: 'POST',
       token: accessToken,
-      body: JSON.stringify({ queued: false }),
+      body: JSON.stringify({}),
     });
   },
 
   refreshInventory(accessToken: string) {
-    return request<InventoryRefreshResult>('/sku-dashboard/refresh-inventory', {
+    return request<BackgroundJobResult>('/sku-dashboard/refresh-inventory', {
       method: 'POST',
       token: accessToken,
       body: JSON.stringify({}),

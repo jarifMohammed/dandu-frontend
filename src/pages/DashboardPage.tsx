@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { Kpi, Panel, InlineError } from '../components/ui';
 import {
-  authApi, AuthSession, CurrentUserProfile, DashboardMetrics, DashboardPeriod, SyncResult,
+  authApi, AuthSession, CurrentUserProfile, DashboardMetrics, DashboardPeriod, BackgroundJobResult,
   InventoryAlertItem,
 } from '../lib/authApi';
 import {
@@ -51,7 +51,7 @@ export function DashboardPage({ session, profile }: { session: AuthSession; prof
   // Sync state
   const [syncing, setSyncing] = useState(false);
   const [syncStep, setSyncStep] = useState(0);
-  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [syncResult, setSyncResult] = useState<BackgroundJobResult | null>(null);
 
   const fetchMetrics = useCallback(async (p: DashboardPeriod, isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -97,8 +97,6 @@ export function DashboardPage({ session, profile }: { session: AuthSession; prof
     try {
       const response = await authApi.triggerLinnworksSync(session.accessToken);
       setSyncResult(response.data);
-      // After sync, refresh metrics automatically
-      await fetchMetrics(period, true);
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Sync failed. Please try again.';
       setError(msg);
@@ -204,12 +202,9 @@ export function DashboardPage({ session, profile }: { session: AuthSession; prof
       {/* Sync success banner */}
       {syncResult && !syncing && (
         <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          <span className="font-bold">✓ Sync complete</span>
-          <span>SKUs updated: <strong>{syncResult.updatedSkus}</strong></span>
-          <span>Stock lines: <strong>{syncResult.updatedStock}</strong></span>
-          <span>Listings: <strong>{syncResult.updatedListings}</strong></span>
-          {syncResult.updatedSalesMetrics != null && <span>Sales metrics: <strong>{syncResult.updatedSalesMetrics}</strong></span>}
-          <span className="text-emerald-600">in {(syncResult.durationMs / 1000).toFixed(1)}s</span>
+          <span className="font-bold">Sync queued</span>
+          <span>Job: <strong>{syncResult.jobId ?? 'pending'}</strong></span>
+          <span className="text-emerald-600">Running in the background</span>
           <button onClick={() => setSyncResult(null)} className="ml-auto text-emerald-500 hover:text-emerald-700">✕</button>
         </div>
       )}

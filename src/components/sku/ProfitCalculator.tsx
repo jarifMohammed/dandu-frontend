@@ -21,7 +21,9 @@ interface ChannelMargin {
   referralFee: number;
   fbaFee: number;
   cogs: number;
-  prep: number;
+  pickFee: number;
+  packFee: number;
+  shippingFee: number;
   netProfit: number;
   marginPct: number;
   roiPct: number;
@@ -30,7 +32,9 @@ interface ChannelMargin {
 function calcMargins(
   metrics: SkuMetrics,
   referralPct: number,
-  prepCost: number,
+  pickFee: number,
+  packFee: number,
+  shippingFee: number,
 ): ChannelMargin[] {
   const product: any = metrics.product || {};
   const cogs = parseFloat(product.cost || '0');
@@ -39,11 +43,11 @@ function calcMargins(
   const fbaFee = estimateFBAFee(weightLbs);
 
   return metrics.channels
-    .filter((c: any) => c.price && parseFloat(c.price) > 0)
+    .filter((c: any) => asPrice(c) > 0)
     .map((c: any) => {
-      const price = parseFloat(c.price);
+      const price = asPrice(c);
       const referralFee = parseFloat(((price * referralPct) / 100).toFixed(2));
-      const totalCosts = cogs + referralFee + fbaFee + prepCost;
+      const totalCosts = cogs + referralFee + fbaFee + pickFee + packFee + shippingFee;
       const netProfit = parseFloat((price - totalCosts).toFixed(2));
       const marginPct = price > 0 ? parseFloat(((netProfit / price) * 100).toFixed(1)) : 0;
       const roiPct = cogs > 0 ? parseFloat(((netProfit / cogs) * 100).toFixed(1)) : 0;
@@ -63,12 +67,18 @@ function calcMargins(
         referralFee,
         fbaFee,
         cogs,
-        prep: prepCost,
+        pickFee,
+        packFee,
+        shippingFee,
         netProfit,
         marginPct,
         roiPct,
       };
     });
+}
+
+function asPrice(channel: any): number {
+  return parseFloat(channel.price ?? channel.fbaPrice ?? channel.mfnPrice ?? '0') || 0;
 }
 
 function fmt(n: number) {
@@ -77,9 +87,11 @@ function fmt(n: number) {
 
 export function ProfitCalculator({ data }: { data: SkuMetrics }) {
   const [referralPct, setReferralPct] = useState(15);
-  const [prepCost, setPrepCost] = useState(0.5);
+  const [pickFee, setPickFee] = useState(0);
+  const [packFee, setPackFee] = useState(0);
+  const [shippingFee, setShippingFee] = useState(0);
 
-  const margins = calcMargins(data, referralPct, prepCost);
+  const margins = calcMargins(data, referralPct, pickFee, packFee, shippingFee);
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -89,9 +101,9 @@ export function ProfitCalculator({ data }: { data: SkuMetrics }) {
           <TrendingUp className="size-5 text-emerald-700" />
           <h3 className="text-base font-black text-slate-900">Profit Margin Calculator</h3>
         </div>
-        <div className="flex items-center gap-3 text-sm">
+        <div className="flex flex-wrap items-center gap-3 text-sm">
           <label className="flex items-center gap-1.5 text-slate-500">
-            Referral Fee
+            Referral
             <input
               type="number"
               min={0}
@@ -104,13 +116,37 @@ export function ProfitCalculator({ data }: { data: SkuMetrics }) {
             %
           </label>
           <label className="flex items-center gap-1.5 text-slate-500">
-            Prep Cost
+            Pick
             <input
               type="number"
               min={0}
               step={0.1}
-              value={prepCost}
-              onChange={(e) => setPrepCost(Number(e.target.value))}
+              value={pickFee}
+              onChange={(e) => setPickFee(Number(e.target.value))}
+              className="w-16 rounded-lg border border-slate-200 px-2 py-1 text-center font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-600"
+            />
+            $
+          </label>
+          <label className="flex items-center gap-1.5 text-slate-500">
+            Pack
+            <input
+              type="number"
+              min={0}
+              step={0.1}
+              value={packFee}
+              onChange={(e) => setPackFee(Number(e.target.value))}
+              className="w-16 rounded-lg border border-slate-200 px-2 py-1 text-center font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-600"
+            />
+            $
+          </label>
+          <label className="flex items-center gap-1.5 text-slate-500">
+            Shipping
+            <input
+              type="number"
+              min={0}
+              step={0.1}
+              value={shippingFee}
+              onChange={(e) => setShippingFee(Number(e.target.value))}
               className="w-16 rounded-lg border border-slate-200 px-2 py-1 text-center font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-600"
             />
             $
@@ -129,7 +165,7 @@ export function ProfitCalculator({ data }: { data: SkuMetrics }) {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-slate-100">
-                {['Channel', 'Sale Price', 'COGS', 'Referral', 'FBA Fee', 'Prep', 'Net Profit', 'Margin', 'ROI'].map((h) => (
+                {['Channel', 'Sale Price', 'COGS', 'Referral', 'FBA Fee', 'Pick', 'Pack', 'Shipping', 'Net Profit', 'Margin', 'ROI'].map((h) => (
                   <th key={h} className="py-2 pr-4 text-right first:text-left text-[11px] font-black uppercase tracking-wide text-slate-400">
                     {h}
                   </th>
@@ -146,7 +182,9 @@ export function ProfitCalculator({ data }: { data: SkuMetrics }) {
                   <td className="py-3 pr-4 text-right text-slate-600">-{fmt(m.cogs)}</td>
                   <td className="py-3 pr-4 text-right text-slate-600">-{fmt(m.referralFee)}</td>
                   <td className="py-3 pr-4 text-right text-slate-600">-{fmt(m.fbaFee)}</td>
-                  <td className="py-3 pr-4 text-right text-slate-600">-{fmt(m.prep)}</td>
+                  <td className="py-3 pr-4 text-right text-slate-600">-{fmt(m.pickFee)}</td>
+                  <td className="py-3 pr-4 text-right text-slate-600">-{fmt(m.packFee)}</td>
+                  <td className="py-3 pr-4 text-right text-slate-600">-{fmt(m.shippingFee)}</td>
                   <td className="py-3 pr-4 text-right">
                     <span className={`font-black ${m.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
                       {fmt(m.netProfit)}
@@ -173,7 +211,7 @@ export function ProfitCalculator({ data }: { data: SkuMetrics }) {
         )}
         <p className="mt-3 flex items-center gap-1 text-[11px] text-slate-400">
           <Info className="size-3 shrink-0" />
-          FBA fees estimated from product weight. Referral fee and prep cost are configurable above. Excludes storage fees and PPC.
+          FBA fees estimated from product weight. Referral, pick, pack, and shipping fees are configurable above. Excludes storage fees and PPC.
         </p>
       </div>
     </div>

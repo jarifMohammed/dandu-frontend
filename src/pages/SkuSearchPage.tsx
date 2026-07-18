@@ -100,9 +100,8 @@ export function SkuSearchPage({ session }: { session: AuthSession }) {
     try {
       const response = await authApi.refreshInventory(session.accessToken);
       setRefreshMessage(
-        `Inventory refreshed: ${response.data.remainingSkuCount.toLocaleString()} SKUs remaining, ${response.data.deletedSkus.toLocaleString()} stale SKUs deleted.`,
+        `Inventory refresh queued. Job ${response.data.jobId ?? 'pending'} is running in the background.`,
       );
-      await fetchSkus(activeFilters);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to refresh inventory');
     } finally {
