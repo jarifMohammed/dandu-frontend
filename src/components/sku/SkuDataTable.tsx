@@ -80,6 +80,39 @@ function asNumber(value: unknown): number {
   return Number.isFinite(num) ? num : 0;
 }
 
+function normalizeCountry(value: unknown): string | null {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  if (!normalized) return null;
+  if (['US', 'USA', 'U.S.', 'U.S.A.', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(normalized)) return 'US';
+  if (['CA', 'CAN', 'CANADA'].includes(normalized)) return 'CA';
+  if (normalized.includes('CANADA') || normalized.includes('CAFBA') || normalized.includes('CAFBM')) return 'CA';
+  if (normalized.includes('UNITED STATES') || normalized.includes('USFBA') || normalized.includes('USFBM')) return 'US';
+  return normalized;
+}
+
+function countryMatches(actual: unknown, expected?: string): boolean {
+  if (!expected) return true;
+  return normalizeCountry(actual) === normalizeCountry(expected);
+}
+
+function normalizeFulfillment(value: unknown): 'FBA' | 'MFN' | 'ALL' {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  if (normalized.includes('FBA') || normalized.includes('FULFILLMENT')) return 'FBA';
+  if (normalized.includes('MFN') || normalized.includes('FBM') || normalized.includes('MERCHANT')) return 'MFN';
+  return 'ALL';
+}
+
+function stockLocationType(row: any): 'FBA' | 'MFN' {
+  const locationText = [
+    row.locationType,
+    row.warehouse,
+    row.location,
+    row.locationName,
+  ].filter(Boolean).join(' ');
+
+  return normalizeFulfillment(locationText) === 'FBA' ? 'FBA' : 'MFN';
+}
+
 function getMarketplaceUrl(
   channel: string,
   country: string | undefined,
@@ -213,8 +246,12 @@ function sumSales(
   return (metrics.salesMetrics as any[])
     .filter((metric) => {
       if (options.channel && metric.channel !== options.channel) return false;
-      if (options.country && metric.country !== options.country) return false;
-      if (options.fulfillmentType && (metric.fulfillmentType ?? 'ALL') !== options.fulfillmentType) return false;
+      if (!countryMatches(metric.country, options.country)) return false;
+      const metricFulfillment = normalizeFulfillment(metric.fulfillmentType);
+      if (options.fulfillmentType && metricFulfillment !== options.fulfillmentType) {
+        const unknownMerchantSale = metricFulfillment === 'ALL' && options.fulfillmentType === 'MFN';
+        if (!unknownMerchantSale) return false;
+      }
       return periodDays(metric) === options.days;
     })
     .reduce((sum, metric) => sum + asNumber(metric.unitsSold), 0);
@@ -222,7 +259,7 @@ function sumSales(
 
 function findChannel(metrics: SkuMetrics, channel: string, country?: string) {
   return (metrics.channels as any[]).find((row) =>
-    row.channel === channel && (country ? row.country === country : true),
+    row.channel === channel && countryMatches(row.country, country),
   ) as any | undefined;
 }
 
@@ -243,8 +280,8 @@ function getChannelData(metrics: SkuMetrics, channelName: string, country?: stri
     ),
     fbaQty: stockFBA > 0 ? stockFBA.toLocaleString() : '-',
     mfnQty: stockMFN > 0 ? stockMFN.toLocaleString() : '-',
-    fbaPrice: formatCurrency(channel?.fbaPrice ?? channel?.price),
-    mfnPrice: formatCurrency(channel?.mfnPrice ?? channel?.price),
+    fbaPrice: formatCurrency(channel?.fbaPrice ?? channel?.price ?? channel?.mfnPrice),
+    mfnPrice: formatCurrency(channel?.mfnPrice ?? channel?.price ?? channel?.fbaPrice),
     salesFBA7: getSalesForPeriod(metrics, channelName, country, 7, 'FBA'),
     salesFBA30: getSalesForPeriod(metrics, channelName, country, 30, 'FBA'),
     salesFBA90: getSalesForPeriod(metrics, channelName, country, 90, 'FBA'),
@@ -259,9 +296,9 @@ function getChannelData(metrics: SkuMetrics, channelName: string, country?: stri
 function stockQuantity(metrics: SkuMetrics, options: { country?: string; fba?: boolean; includeInbound?: boolean }): number {
   return (metrics.stock as any[])
     .filter((row) => {
-      const type = row.locationType === 'FBM' ? 'MFN' : row.locationType;
-      if (options.country && row.country !== options.country) return false;
-      return options.fba ? type === 'FBA' : type !== 'FBA';
+      const type = stockLocationType(row);
+      if (!countryMatches(row.country, options.country)) return false;
+      return options.fba ? type === 'FBA' : type === 'MFN';
     })
     .reduce((sum, row) => sum + asNumber(row.available) + (options.includeInbound ? asNumber(row.inbound) : 0), 0);
 }
@@ -369,6 +406,8 @@ export function SkuDataTable({ data, session, onUpdate }: { data: SkuMetrics; se
   }));
 
   const salesRows = getSalesRowsForTab(fulfillmentTab);
+  const selectedStockKey = fulfillmentTab === 'FBA' ? 'fbaQty' : 'mfnQty';
+  const selectedPriceKey = fulfillmentTab === 'FBA' ? 'fbaPrice' : 'mfnPrice';
 
   const stockSummaryRows = [
     { label: 'DEFAULT', value: formatNumber(stockQuantity(data, { fba: false })) },
@@ -549,7 +588,7 @@ export function SkuDataTable({ data, session, onUpdate }: { data: SkuMetrics; se
 
           <tbody>
             <tr>
-              <td className={`${tdLeft} align-top`} rowSpan={5}>
+              <td className={`${tdLeft} align-top`} rowSpan={3}>
                 {product.imageUrl ? (
                   <img
                     src={product.imageUrl}
@@ -572,32 +611,18 @@ export function SkuDataTable({ data, session, onUpdate }: { data: SkuMetrics; se
             <tr className="bg-slate-50">
               {channels.map((channel) => (
                 <td key={channel.name} className={td}>
-                  <span className="block text-[10px] uppercase tracking-wider text-slate-400">FBA Stock</span>
-                  <span className="font-semibold text-slate-800">{channel.data.fbaQty}</span>
+                  <span className="block text-[10px] uppercase tracking-wider text-slate-400">{fulfillmentTab} Stock</span>
+                  <span className="font-semibold text-slate-800">{(channel.data as any)[selectedStockKey]}</span>
                 </td>
               ))}
             </tr>
             <tr>
               {channels.map((channel) => (
                 <td key={channel.name} className={td}>
-                  <span className="block text-[10px] uppercase tracking-wider text-slate-400">MFN Stock</span>
-                  <span className="font-semibold text-slate-800">{channel.data.mfnQty}</span>
-                </td>
-              ))}
-            </tr>
-            <tr className="bg-slate-50">
-              {channels.map((channel) => (
-                <td key={channel.name} className={td}>
-                  <span className="block text-[10px] uppercase tracking-wider text-slate-400">FBA Price</span>
-                  <span className="font-bold text-emerald-700">{channel.data.fbaPrice}</span>
-                </td>
-              ))}
-            </tr>
-            <tr>
-              {channels.map((channel) => (
-                <td key={channel.name} className={td}>
-                  <span className="block text-[10px] uppercase tracking-wider text-slate-400">MFN Price</span>
-                  <span className="font-bold text-slate-700">{channel.data.mfnPrice}</span>
+                  <span className="block text-[10px] uppercase tracking-wider text-slate-400">{fulfillmentTab} Price</span>
+                  <span className={fulfillmentTab === 'FBA' ? 'font-bold text-emerald-700' : 'font-bold text-slate-700'}>
+                    {(channel.data as any)[selectedPriceKey]}
+                  </span>
                 </td>
               ))}
             </tr>
