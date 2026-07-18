@@ -1,8 +1,9 @@
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import { Pencil, Check, X, Loader2, ExternalLink } from 'lucide-react';
 import { authApi, AuthSession, SkuMetrics } from '../../lib/authApi';
 
 type UnknownRecord = Record<string, unknown>;
+type FulfillmentTab = 'FBA' | 'MFN';
 
 function formatCurrency(value: string | number | null | undefined): string {
   if (value == null) return '-';
@@ -79,7 +80,13 @@ function asNumber(value: unknown): number {
   return Number.isFinite(num) ? num : 0;
 }
 
-function getMarketplaceUrl(channel: string, country: string | undefined, asin: string | null, listingId: string | null): string | null {
+function getMarketplaceUrl(
+  channel: string,
+  country: string | undefined,
+  asin: string | null,
+  listingId: string | null,
+  productUrl?: string | null,
+): string | null {
   if (channel === 'AMAZON' && asin && asin !== '-') {
     const domain = country === 'CA' ? 'amazon.ca' : 'amazon.com';
     return `https://www.${domain}/dp/${asin}`;
@@ -88,7 +95,34 @@ function getMarketplaceUrl(channel: string, country: string | undefined, asin: s
     const ebayId = (listingId && listingId !== '-') ? listingId : (asin && asin !== '-' ? asin : null);
     if (ebayId) return `https://www.ebay.com/itm/${ebayId}`;
   }
+  if (channel === 'WEBSITE') {
+    const candidate = productUrl || listingId || asin;
+    if (candidate && /^https?:\/\//i.test(candidate)) return candidate;
+  }
   return null;
+}
+
+function ClickableValue({
+  value,
+  url,
+}: {
+  value: string | number | null | undefined;
+  url: string | null;
+}) {
+  const display = value == null || value === '' ? '-' : String(value);
+  if (!url || display === '-') return <span>{display}</span>;
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center justify-center gap-1 font-mono font-semibold text-emerald-700 hover:text-emerald-900 hover:underline"
+    >
+      {display}
+      <ExternalLink className="size-3" />
+    </a>
+  );
 }
 
 function DetailTable({
@@ -151,6 +185,22 @@ function periodDays(row: any): number {
   return Math.round((end - start) / (1000 * 60 * 60 * 24));
 }
 
+function getSalesForPeriod(
+  metrics: SkuMetrics,
+  channelName: string,
+  country: string | undefined,
+  targetDays: number,
+  fulfillmentType?: 'FBA' | 'MFN' | 'ALL',
+): string {
+  const value = sumSales(metrics, {
+    channel: channelName,
+    country,
+    fulfillmentType: fulfillmentType === 'ALL' ? undefined : fulfillmentType,
+    days: targetDays,
+  });
+  return value > 0 ? value.toLocaleString() : '-';
+}
+
 function sumSales(
   metrics: SkuMetrics,
   options: {
@@ -176,6 +226,36 @@ function findChannel(metrics: SkuMetrics, channel: string, country?: string) {
   ) as any | undefined;
 }
 
+function getChannelData(metrics: SkuMetrics, channelName: string, country?: string) {
+  const channel = findChannel(metrics, channelName, country);
+  const stockFBA = stockQuantity(metrics, { country, fba: true, includeInbound: false });
+  const stockMFN = stockQuantity(metrics, { country, fba: false, includeInbound: false });
+
+  return {
+    asin: channel?.asin ?? channel?.listingId ?? '-',
+    listingId: channel?.listingId ?? null,
+    url: getMarketplaceUrl(
+      channelName,
+      country,
+      channel?.asin ?? null,
+      channel?.listingId ?? null,
+      (metrics.product as any)?.productUrl ?? null,
+    ),
+    fbaQty: stockFBA > 0 ? stockFBA.toLocaleString() : '-',
+    mfnQty: stockMFN > 0 ? stockMFN.toLocaleString() : '-',
+    fbaPrice: formatCurrency(channel?.fbaPrice ?? channel?.price),
+    mfnPrice: formatCurrency(channel?.mfnPrice ?? channel?.price),
+    salesFBA7: getSalesForPeriod(metrics, channelName, country, 7, 'FBA'),
+    salesFBA30: getSalesForPeriod(metrics, channelName, country, 30, 'FBA'),
+    salesFBA90: getSalesForPeriod(metrics, channelName, country, 90, 'FBA'),
+    salesFBA365: getSalesForPeriod(metrics, channelName, country, 365, 'FBA'),
+    salesMFN7: getSalesForPeriod(metrics, channelName, country, 7, 'MFN'),
+    salesMFN30: getSalesForPeriod(metrics, channelName, country, 30, 'MFN'),
+    salesMFN90: getSalesForPeriod(metrics, channelName, country, 90, 'MFN'),
+    salesMFN365: getSalesForPeriod(metrics, channelName, country, 365, 'MFN'),
+  };
+}
+
 function stockQuantity(metrics: SkuMetrics, options: { country?: string; fba?: boolean; includeInbound?: boolean }): number {
   return (metrics.stock as any[])
     .filter((row) => {
@@ -198,10 +278,28 @@ const ATTRIBUTE_ROWS = [
   { label: 'PACK QTY' },
 ] as const;
 
+function getSalesRowsForTab(tab: FulfillmentTab): { label: string; key: string }[] {
+  if (tab === 'FBA') {
+    return [
+      { label: '7-Day FBA Sales (units)', key: 'salesFBA7' },
+      { label: '30-Day FBA Sales (units)', key: 'salesFBA30' },
+      { label: '90-Day FBA Sales (units)', key: 'salesFBA90' },
+      { label: '365-Day FBA Sales (units)', key: 'salesFBA365' },
+    ];
+  }
+  return [
+    { label: '7-Day MFN Sales (units)', key: 'salesMFN7' },
+    { label: '30-Day MFN Sales (units)', key: 'salesMFN30' },
+    { label: '90-Day MFN Sales (units)', key: 'salesMFN90' },
+    { label: '365-Day MFN Sales (units)', key: 'salesMFN365' },
+  ];
+}
+
 export function SkuDataTable({ data, session, onUpdate }: { data: SkuMetrics; session?: AuthSession; onUpdate?: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+  const [fulfillmentTab, setFulfillmentTab] = useState<FulfillmentTab>('FBA');
   const product: any = data.product ?? {};
 
   const [editValues, setEditValues] = useState({
@@ -258,6 +356,19 @@ export function SkuDataTable({ data, session, onUpdate }: { data: SkuMetrics; se
   const amazonCa = findChannel(data, 'AMAZON', 'CA');
   const ebay = findChannel(data, 'EBAY');
   const website = findChannel(data, 'WEBSITE');
+  const channelDefs = [
+    { name: 'Amazon US', ch: 'AMAZON', country: 'US' },
+    { name: 'Amazon CA', ch: 'AMAZON', country: 'CA' },
+    { name: 'eBay', ch: 'EBAY', country: undefined },
+    { name: 'DistinctAndUnique', ch: 'WEBSITE', country: undefined },
+  ];
+
+  const channels = channelDefs.map((def) => ({
+    ...def,
+    data: getChannelData(data, def.ch, def.country),
+  }));
+
+  const salesRows = getSalesRowsForTab(fulfillmentTab);
 
   const stockSummaryRows = [
     { label: 'DEFAULT', value: formatNumber(stockQuantity(data, { fba: false })) },
@@ -345,6 +456,18 @@ export function SkuDataTable({ data, session, onUpdate }: { data: SkuMetrics; se
   const th = 'border-b border-r border-slate-200 p-3 text-xs font-bold uppercase tracking-wide';
   const td = 'border-b border-r border-slate-200 p-2 text-center text-sm';
   const tdLeft = 'border-b border-r border-slate-200 p-3 text-sm';
+  const requiredSections = [
+    { title: 'STOCK QUANTITY', rows: stockSummaryRows },
+    { title: 'SELLING PRICE', rows: sellingPriceRows },
+    {
+      title: 'ASIN',
+      rows: asinRows.map((row) => ({
+        label: row.label,
+        value: <ClickableValue value={row.asin} url={row.url} />,
+      })),
+    },
+    ...salesSections,
+  ];
   const productRows = data.product ? [data.product as UnknownRecord] : [];
   const stockRows = data.stock as UnknownRecord[];
   const channelRows = data.channels as UnknownRecord[];
@@ -359,18 +482,43 @@ export function SkuDataTable({ data, session, onUpdate }: { data: SkuMetrics; se
         </div>
       )}
 
+      <div className="border-b border-slate-200 px-4 pt-3">
+        <div className="flex gap-1">
+          <button
+            onClick={() => setFulfillmentTab('FBA')}
+            className={`px-4 py-2 text-xs font-bold uppercase tracking-wide rounded-t-lg transition ${
+              fulfillmentTab === 'FBA'
+                ? 'bg-emerald-700 text-white'
+                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+            }`}
+          >
+            FBA (Fulfilled by Amazon)
+          </button>
+          <button
+            onClick={() => setFulfillmentTab('MFN')}
+            className={`px-4 py-2 text-xs font-bold uppercase tracking-wide rounded-t-lg transition ${
+              fulfillmentTab === 'MFN'
+                ? 'bg-slate-700 text-white'
+                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+            }`}
+          >
+            MFN (Merchant Fulfilled)
+          </button>
+        </div>
+      </div>
+
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse text-left">
+        <table className="w-full min-w-[900px] border-collapse text-left">
           <thead>
             <tr className="bg-slate-50">
-              <th className={`${th} bg-slate-100 text-slate-600 w-60`}>SKU</th>
+              <th className={`${th} bg-slate-100 text-slate-600 w-52`}>SKU</th>
               <td className={`${td} text-left font-mono text-emerald-700 font-bold`}>{data.sku}</td>
-              <td className={`${td} text-left font-medium text-slate-900`}>
+              <td className={`${td} text-left font-medium text-slate-900`} colSpan={channels.length - 1}>
                 {product.title ?? 'N/A'}
               </td>
             </tr>
             <tr>
-              <th className={`${th} bg-slate-100 text-slate-600`} colSpan={3}>
+              <th className={`${th} bg-slate-100 text-slate-600`}>
                 <div className="flex justify-between items-center">
                   <span>Product Info</span>
                   {session && onUpdate && (
@@ -391,12 +539,17 @@ export function SkuDataTable({ data, session, onUpdate }: { data: SkuMetrics; se
                   )}
                 </div>
               </th>
+              {channels.map((channel) => (
+                <th key={channel.name} className={`${th} bg-emerald-700 text-white text-center`}>
+                  {channel.name}
+                </th>
+              ))}
             </tr>
           </thead>
 
           <tbody>
             <tr>
-              <td className={`${tdLeft} align-top`} rowSpan={ATTRIBUTE_ROWS.length + 1}>
+              <td className={`${tdLeft} align-top`} rowSpan={5}>
                 {product.imageUrl ? (
                   <img
                     src={product.imageUrl}
@@ -409,11 +562,48 @@ export function SkuDataTable({ data, session, onUpdate }: { data: SkuMetrics; se
                   </div>
                 )}
               </td>
-              <td className={`${tdLeft} font-bold text-slate-900`}>TITLE</td>
-              <td className={`${tdLeft} text-slate-700`}>{product.title ?? 'N/A'}</td>
+              {channels.map((channel) => (
+                <td key={channel.name} className={td}>
+                  <span className="block text-[10px] uppercase tracking-wider text-slate-400">Listing ID / ASIN</span>
+                  <ClickableValue value={channel.data.asin} url={channel.data.url} />
+                </td>
+              ))}
+            </tr>
+            <tr className="bg-slate-50">
+              {channels.map((channel) => (
+                <td key={channel.name} className={td}>
+                  <span className="block text-[10px] uppercase tracking-wider text-slate-400">FBA Stock</span>
+                  <span className="font-semibold text-slate-800">{channel.data.fbaQty}</span>
+                </td>
+              ))}
+            </tr>
+            <tr>
+              {channels.map((channel) => (
+                <td key={channel.name} className={td}>
+                  <span className="block text-[10px] uppercase tracking-wider text-slate-400">MFN Stock</span>
+                  <span className="font-semibold text-slate-800">{channel.data.mfnQty}</span>
+                </td>
+              ))}
+            </tr>
+            <tr className="bg-slate-50">
+              {channels.map((channel) => (
+                <td key={channel.name} className={td}>
+                  <span className="block text-[10px] uppercase tracking-wider text-slate-400">FBA Price</span>
+                  <span className="font-bold text-emerald-700">{channel.data.fbaPrice}</span>
+                </td>
+              ))}
+            </tr>
+            <tr>
+              {channels.map((channel) => (
+                <td key={channel.name} className={td}>
+                  <span className="block text-[10px] uppercase tracking-wider text-slate-400">MFN Price</span>
+                  <span className="font-bold text-slate-700">{channel.data.mfnPrice}</span>
+                </td>
+              ))}
             </tr>
 
             {ATTRIBUTE_ROWS.map((row, i) => {
+              const salesRow = salesRows[i];
               let editContent = <span className="font-semibold text-slate-900">{attrValues[row.label] ?? 'N/A'}</span>;
 
               if (isEditing) {
@@ -438,69 +628,53 @@ export function SkuDataTable({ data, session, onUpdate }: { data: SkuMetrics; se
 
               return (
                 <tr key={row.label} className={i % 2 === 0 ? 'bg-slate-50 hover:bg-slate-100 transition-colors' : 'hover:bg-slate-50 transition-colors'}>
-                  <td className={`${tdLeft} text-[11px] font-bold uppercase tracking-wide text-slate-500`}>
-                    {row.label}
-                  </td>
                   <td className={tdLeft}>
-                    {editContent}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{row.label}</span>
+                      {editContent}
+                    </div>
                   </td>
+                  {channels.map((channel) => (
+                    <td key={channel.name} className={td}>
+                      {salesRow ? (
+                        <>
+                          <span className="block text-[10px] uppercase tracking-wider text-slate-400">{salesRow.label}</span>
+                          <span className="font-semibold text-slate-800">{(channel.data as any)[salesRow.key]}</span>
+                        </>
+                      ) : (
+                        <span className="text-slate-300">-</span>
+                      )}
+                    </td>
+                  ))}
                 </tr>
               );
             })}
-
-            <tr>
-              <th className={`${th} bg-emerald-700 text-white`} colSpan={3}>STOCK QUANTITY</th>
-            </tr>
-            {stockSummaryRows.map((row, i) => (
-              <tr key={row.label} className={i % 2 === 0 ? 'bg-slate-50' : undefined}>
-                <td className={`${tdLeft} font-bold text-slate-600`} colSpan={2}>{row.label}</td>
-                <td className={`${td} font-black text-slate-900`}>{row.value}</td>
-              </tr>
-            ))}
-
-            <tr>
-              <th className={`${th} bg-emerald-700 text-white`} colSpan={3}>SELLING PRICE</th>
-            </tr>
-            {sellingPriceRows.map((row, i) => (
-              <tr key={row.label} className={i % 2 === 0 ? 'bg-slate-50' : undefined}>
-                <td className={`${tdLeft} font-bold text-slate-600`} colSpan={2}>{row.label}</td>
-                <td className={`${td} font-black text-emerald-700`}>{row.value}</td>
-              </tr>
-            ))}
-
-            <tr>
-              <th className={`${th} bg-emerald-700 text-white`} colSpan={3}>ASIN</th>
-            </tr>
-            {asinRows.map((row, i) => (
-              <tr key={row.label} className={i % 2 === 0 ? 'bg-slate-50' : undefined}>
-                <td className={`${tdLeft} font-bold text-slate-600`} colSpan={2}>{row.label}</td>
-                <td className={`${td} font-mono font-bold text-slate-900`}>
-                  {row.url ? (
-                    <a href={row.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-1 text-emerald-700 hover:text-emerald-900 hover:underline">
-                      {row.asin}
-                      <ExternalLink className="size-3" />
-                    </a>
-                  ) : row.asin}
-                </td>
-              </tr>
-            ))}
-
-            {salesSections.map((section) => (
-              <Fragment key={section.title}>
-                <tr>
-                  <th className={`${th} bg-slate-800 text-white`} colSpan={3}>{section.title}</th>
-                </tr>
-                {section.rows.map((row, i) => (
-                  <tr key={`${section.title}-${row.label}`} className={i % 2 === 0 ? 'bg-slate-50' : undefined}>
-                    <td className={`${tdLeft} font-bold text-slate-600`} colSpan={2}>{row.label}</td>
-                    <td className={`${td} font-black text-slate-900`}>{row.value}</td>
-                  </tr>
-                ))}
-              </Fragment>
-            ))}
           </tbody>
         </table>
       </div>
+
+      <section className="border-t border-slate-200 p-4">
+        <h4 className="mb-3 text-xs font-black uppercase tracking-wide text-slate-500">SKU Required Fields</h4>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {requiredSections.map((section) => (
+            <div key={section.title} className="overflow-hidden rounded-lg border border-slate-200">
+              <div className="bg-slate-100 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-600">
+                {section.title}
+              </div>
+              <table className="w-full border-collapse text-xs">
+                <tbody>
+                  {section.rows.map((row, index) => (
+                    <tr key={`${section.title}-${row.label}`} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                      <td className="border-t border-r border-slate-100 px-3 py-2 font-bold text-slate-500">{row.label}</td>
+                      <td className="border-t border-slate-100 px-3 py-2 text-right font-black text-slate-900">{row.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <DetailTable
         title="All Product Data"
